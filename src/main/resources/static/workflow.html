@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>工作流管理 - WMS</title>
+    <link rel="stylesheet" href="/css/wms.css">
+</head>
+<body>
+<div class="header">
+    <h2>🔄 工作流管理</h2>
+    <div class="header-info">
+        <span>租户: <span id="tenantCode">-</span></span>
+        <span>用户: <span id="username">-</span></span>
+        <button class="logout-btn" onclick="logout()">退出登录</button>
+    </div>
+</div>
+
+<div class="app-container">
+    <div class="sidebar">
+        <<a href="/index.html" class="active">📊 仪表盘</a>
+        <a href="/inbound.html">📥 入库管理</a>
+        <a href="/outbound.html">📤 出库管理</a>
+        <a href="/inventory.html">📦 库存查询</a>
+        <a href="/iot-dashboard.html">📈 IoT仪表盘</a>
+        <a href="/ai-chat.html">🤖 AI聊天</a>
+        <a href="/ai-agent.html">🔧 AI智能体</a>
+        <a href="/replenishment.html" class="active">📝 智能补货</a>
+        <a href="/exception.html">⚠️ 异常管理</a>
+        <a href="/workflow.html" class="active">🔄 工作流</a>
+    </div>
+
+    <div class="main-content">
+        <!-- 操作按钮 -->
+        <div style="margin-bottom: 16px; display: flex; gap: 12px;">
+            <button class="btn btn-primary" onclick="loadTasks('my')">📋 我的任务</button>
+            <button class="btn btn-success" onclick="loadTasks('manager')">👥 主管待办</button>
+            <button class="btn btn-warning" onclick="loadTasks('director')">👔 经理待办</button>
+            <button class="btn btn-default" onclick="loadTasks()">🔄 刷新</button>
+        </div>
+
+        <!-- 待办任务 -->
+        <div class="card">
+            <div class="card-header">
+                <h3>📋 待办任务列表</h3>
+            </div>
+            <div class="card-body">
+                <table class="data-table" id="taskTable">
+                    <thead>
+                    <tr><th>任务ID</th><th>任务名称</th><th>流程实例ID</th><th>创建时间</th><th>操作</th></tr>
+                    </thead>
+                    <tbody>
+                    <tr><td colspan="5" class="text-center">加载中...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="/js/common.js"></script>
+<script>
+    // 从 token 中解析用户名
+    function getUsernameFromToken() {
+        const token = localStorage.getItem('token');
+        if (!token) return 'admin';
+        try {
+            const payload = JSON.parse(atob(token.split('.')[1]));
+            return payload.username || 'admin';
+        } catch(e) {
+            return 'admin';
+        }
+    }
+
+    async function loadTasks(type = 'my') {
+        if (!checkAuth()) return;
+
+        let url = '/api/workflow/tasks';
+        const username = getUsernameFromToken();
+
+        if (type === 'my') {
+            url += `?assignee=${username}`;
+        } else if (type === 'manager') {
+            url += '?candidateGroup=manager';
+        } else if (type === 'director') {
+            url += '?candidateGroup=director';
+        }
+
+        console.log('请求URL:', url);
+
+        try {
+            const response = await request(url);
+            const tasks = await response.json();
+
+            const tbody = document.querySelector('#taskTable tbody');
+            if (!tasks || tasks.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="5" class="text-center">暂无待办任务</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = tasks.map(task => `
+                <tr>
+                    <td><code>${task.id.substring(0, 8)}...</code></td>
+                    <td>${task.name || '-'}</td>
+                    <td><code>${task.processInstanceId ? task.processInstanceId.substring(0, 8) + '...' : '-'}</code></td>
+                    <td>${new Date(task.createTime).toLocaleString()}</td>
+                    <td>
+                        <button class="btn btn-primary" style="padding:4px 8px;font-size:12px" onclick="showApproveModal('${task.id}', '${task.name}')">处理</button>
+                    </td>
+                </tr>
+            `).join('');
+        } catch (err) {
+            console.error('加载任务失败:', err);
+            document.querySelector('#taskTable tbody').innerHTML = '<tr><td colspan="5" class="text-center">加载失败: ' + err.message + '</td></tr>';
+        }
+    }
+
+    // 审批弹窗
+    function showApproveModal(taskId, taskName) {
+        const modalHtml = `
+            <div id="approveModal" class="modal show" style="display:flex;">
+                <div class="modal-content" style="width:400px;">
+                    <div class="modal-header">
+                        <h4>审批任务: ${taskName}</h4>
+                        <span class="modal-close" onclick="closeModal()">&times;</span>
+                    </div>
+                    <div class="modal-body">
+                        <div class="form-group">
+                            <label>审批意见</label>
+                            <textarea id="comment" rows="3" placeholder="请输入审批意见..." style="width:100%"></textarea>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button class="btn btn-danger" onclick="submitApprove('${taskId}', false)">驳回</button>
+                        <button class="btn btn-success" onclick="submitApprove('${taskId}', true)">通过</button>
+                    </div>
+                </div>
+            </div>
+        `;
+        document.body.insertAdjacentHTML('beforeend', modalHtml);
+    }
+
+    function closeModal() {
+        const modal = document.getElementById('approveModal');
+        if (modal) modal.remove();
+    }
+
+    async function submitApprove(taskId, approved) {
+        const comment = document.getElementById('comment')?.value || (approved ? '同意' : '驳回');
+
+        try {
+            const response = await request('/api/workflow/task/complete', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    taskId: taskId,
+                    approved: approved,
+                    comment: comment
+                })
+            });
+            const result = await response.json();
+            showMessage(result.message || (approved ? '审批通过' : '审批驳回'));
+            closeModal();
+            loadTasks();
+        } catch (err) {
+            showMessage('审批失败: ' + err.message, 'error');
+        }
+    }
+
+    // 初始化
+    checkAuth();
+    loadTasks();
+
+    document.getElementById('tenantCode').textContent = getTenantCode();
+    document.getElementById('username').textContent = getUsernameFromToken();
+</script>
+</body>
+</html>

@@ -1,0 +1,140 @@
+spring:
+  application:
+    name: wms-tenant-starter
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration
+  cache:
+    type: redis
+    redis:
+      time-to-live: 60000
+  data:
+    redis:
+      host: localhost
+      port: 6379
+  ai:
+    openai:
+      api-key: your_api_key
+      base-url: https://api.deepseek.com/v1
+      chat:
+        options:
+          model: deepseek-chat
+          temperature: 0.7
+          max-tokens: 2000
+          timeout: 180  # 超时时间（秒）
+  mail:
+    host: smtp.126.com
+    port: 465
+    protocol: smtps
+    username: yourmail
+    password: password
+    default-encoding: UTF-8
+    properties:
+      mail:
+        smtp:
+          auth: true
+          ssl:
+            enable: true
+          starttls:
+            enable: true
+          from: yourmail
+  datasource:
+    url: jdbc:mysql://localhost:3306/wms_tenant?useUnicode=true&characterEncoding=utf-8&serverTimezone=Asia/Shanghai&sessionVariables=transaction_isolation='READ-COMMITTED'
+    username: root
+    password: 994920
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  thymeleaf:
+    cache: false
+
+# DeepSeek API 配置
+deepseek:
+  api:
+    key: your_api_key
+
+# LangChain4j 配置（可选，如果不需要可以注释）
+langchain4j:
+  open-ai:
+    api-key: ${deepseek.api.key}
+    base-url: https://api.deepseek.com/v1
+    model-name: deepseek-chat
+    temperature: 0.7
+
+# Milvus 向量数据库配置（可选，暂时禁用）
+milvus:
+  enabled: true
+  host: localhost
+  port: 19530
+  database: default
+  collection: wms_knowledge
+
+# 安全库存阈值
+inventory:
+  safety-stock:
+    threshold: 10
+
+mybatis-plus:
+  mapper-locations: classpath*:/mapper/**/*.xml
+  type-aliases-package: com.wms.entity
+  global-config:
+    db-config:
+      id-type: auto
+  configuration:
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+
+jwt:
+  secret: wms2024SecretKeyForJwtSigningSuperLongAndSecure123456
+  expiration: 2592000000
+
+server:
+  port: 8080
+
+# 日志配置
+logging:
+  level:
+    com.wms: DEBUG
+    com.wms.service.OutboundService: DEBUG
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} - %msg%n"
+
+# MQTT配置
+mqtt:
+  broker:
+    url: tcp://localhost:1883
+  client:
+    id: wms-client
+  topics: /warehouse/+/sensor
+
+# IoT告警配置
+iot:
+  alert:
+    temp:
+      max: 30
+      min: 0
+    humidity:
+      max: 80
+      min: 30
+    consecutive:
+      count: 3
+
+# 告警通知配置
+alert:
+  email:
+    to: admin@wms.com
+  dingtalk:
+    webhook: https://oapi.dingtalk.com/robot/send?access_token=xxx
+
+# TDengine 配置
+tdengine:
+  enabled: true  # 暂时禁用，避免启动问题
+  host: localhost
+  port: 6030
+  username: root
+  password: taosdata
+
+camunda:
+  bpm:
+    admin-user:
+      id: admin
+      password: admin
+    database:
+      schema-update: true

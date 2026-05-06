@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>IoT监控大屏 - WMS</title>
+    <link rel="stylesheet" href="/css/wms.css">
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sockjs-client@1.6.1/dist/sockjs.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/stompjs@2.3.3/lib/stomp.min.js"></script>
+    <style>
+        .gauge-container {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+        .gauge-card {
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            text-align: center;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .gauge-value {
+            font-size: 48px;
+            font-weight: bold;
+            margin: 10px 0;
+        }
+        .gauge-unit {
+            font-size: 16px;
+            color: #666;
+        }
+        .alert-list {
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        .alert-item {
+            padding: 10px;
+            border-left: 3px solid #ff4d4f;
+            margin-bottom: 8px;
+            background: #fff2f0;
+            border-radius: 4px;
+        }
+        .temp-high { color: #ff4d4f; }
+        .temp-low { color: #1890ff; }
+        .humidity-high { color: #faad14; }
+    </style>
+</head>
+<body>
+<div class="header">
+    <h2>🏭 WMS IoT监控大屏</h2>
+    <div class="header-info">
+        <span>租户: <span id="tenantCode">-</span></span>
+        <button class="logout-btn" onclick="logout()">退出登录</button>
+    </div>
+</div>
+
+<div class="app-container">
+    <div class="sidebar">
+        <a href="/index.html" class="active">📊 仪表盘</a>
+        <a href="/inbound.html">📥 入库管理</a>
+        <a href="/outbound.html">📤 出库管理</a>
+        <a href="/inventory.html">📦 库存查询</a>
+        <a href="/iot-dashboard.html">📈 IoT仪表盘</a>
+        <a href="/ai-chat.html">🤖 AI聊天</a>
+        <a href="/ai-agent.html">🔧 AI智能体</a>
+        <a href="/replenishment.html" class="active">📝 智能补货</a>
+        <a href="/exception.html">⚠️ 异常管理</a>
+        <a href="/workflow.html" class="active">🔄 工作流</a>
+    </div>
+
+    <div class="main-content">
+        <!-- 实时仪表 -->
+        <div class="gauge-container">
+            <div class="gauge-card">
+                <h3>🌡️ 温度</h3>
+                <div class="gauge-value" id="temperature">--</div>
+                <div class="gauge-unit">℃</div>
+                <div id="tempStatus" style="margin-top:10px">正常</div>
+            </div>
+            <div class="gauge-card">
+                <h3>💧 湿度</h3>
+                <div class="gauge-value" id="humidity">--</div>
+                <div class="gauge-unit">%</div>
+                <div id="humidityStatus" style="margin-top:10px">正常</div>
+            </div>
+            <div class="gauge-card">
+                <h3>🔋 电量</h3>
+                <div class="gauge-value" id="battery">--</div>
+                <div class="gauge-unit">%</div>
+            </div>
+        </div>
+
+        <!-- 趋势图表 -->
+        <div class="card">
+            <div class="card-header">
+                <h3>📈 温湿度趋势图（最近24小时）</h3>
+                <div>
+                    <select id="deviceSelect" onchange="switchDevice()">
+                        <option value="sensor_01">传感器01 - A区</option>
+                        <option value="sensor_02">传感器02 - B区</option>
+                    </select>
+                    <button class="btn btn-default" onclick="refreshChart()">刷新</button>
+                </div>
+            </div>
+            <div class="card-body">
+                <div id="chart" style="height: 350px;"></div>
+            </div>
+        </div>
+
+        <!-- 告警列表 -->
+        <div class="card">
+            <div class="card-header">
+                <h3>⚠️ 实时告警</h3>
+                <button class="btn btn-default" onclick="loadAlerts()">刷新</button>
+            </div>
+            <div class="card-body">
+                <div id="alertList" class="alert-list">
+                    <div class="text-center">暂无告警</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="/js/common.js"></script>
+<script>
+    let stompClient = null;
+    let chart = null;
+    let currentDevice = 'sensor_01';
+
+    // 初始化WebSocket连接
+    function initWebSocket() {
+        const socket = new SockJS('/ws');
+        stompClient = Stomp.over(socket);
+        stompClient.connect({}, function(frame) {
+            console.log('WebSocket连接成功');
+
+            // 订阅传感器数据
+            stompClient.subscribe('/topic/sensor/all', function(message) {
+                const data = JSON.parse(message.body);
+                updateGauges(data);
+            });
+
+            // 订阅告警
+            stompClient.subscribe('/topic/alert', function(message) {
+                const alert = JSON.parse(message.body);
+                addAlertToList(alert);
+            });
+        });
+    }
+
+    // 更新仪表
+    function updateGauges(data) {
+        document.getElementById('temperature').textContent = data.temperature?.toFixed(1) || '--';
+        document.getElementById('humidity').textContent = data.humidity?.toFixed(0) || '--';
+        document.getElementById('battery').textContent = data.battery?.toFixed(0) || '--';
+
+        // 温度状态
+        const temp = data.temperature;
+        const tempStatus = document.getElementById('tempStatus');
+        if (temp > 30) {
+            tempStatus.innerHTML = '<span class="temp-high">⚠️ 高温告警</span>';
+        } else if (temp < 0) {
+            tempStatus.innerHTML = '<span class="temp-low">❄️ 低温告警</span>';
+        } else {
+            tempStatus.innerHTML = '正常';
+        }
+
+        // 湿度状态
+        const humidity = data.humidity;
+        const humidityStatus = document.getElementById('humidityStatus');
+        if (humidity > 80) {
+            humidityStatus.innerHTML = '<span class="humidity-high">⚠️ 湿度过高</span>';
+        } else if (humidity < 30) {
+            humidityStatus.innerHTML = '<span class="humidity-high">⚠️ 湿度过低</span>';
+        } else {
+            humidityStatus.innerHTML = '正常';
+        }
+
+        // 更新图表数据
+        addChartData(data);
+    }
+
+    // 初始化图表
+    function initChart() {
+        chart = echarts.init(document.getElementById('chart'));
+        chart.setOption({
+            tooltip: { trigger: 'axis' },
+            legend: { data: ['温度(℃)', '湿度(%)'] },
+            xAxis: { type: 'category', data: [] },
+            yAxis: [{ type: 'value', name: '温度(℃)' }, { type: 'value', name: '湿度(%)' }],
+            series: [
+                { name: '温度(℃)', type: 'line', smooth: true, data: [], lineStyle: { color: '#ff4d4f' } },
+                { name: '湿度(%)', type: 'line', smooth: true, data: [], lineStyle: { color: '#1890ff' }, yAxisIndex: 0 }
+            ]
+        });
+    }
+
+    let chartData = { times: [], temps: [], humidities: [] };
+
+    function addChartData(data) {
+        const time = new Date().toLocaleTimeString();
+        chartData.times.push(time);
+        chartData.temps.push(data.temperature);
+        chartData.humidities.push(data.humidity);
+
+        // 只保留最近50个点
+        if (chartData.times.length > 50) {
+            chartData.times.shift();
+            chartData.temps.shift();
+            chartData.humidities.shift();
+        }
+
+        chart.setOption({
+            xAxis: { data: chartData.times },
+            series: [
+                { data: chartData.temps },
+                { data: chartData.humidities }
+            ]
+        });
+    }
+
+    async function refreshChart() {
+        // 从后端加载历史数据
+        const endTime = Date.now();
+        const startTime = endTime - 24 * 60 * 60 * 1000;
+        const response = await request(`/api/iot/sensor/history/${currentDevice}?startTime=${startTime}&endTime=${endTime}`);
+        const history = await response.json();
+
+        chartData = { times: [], temps: [], humidities: [] };
+        history.forEach(item => {
+            chartData.times.push(new Date(item.ts).toLocaleTimeString());
+            chartData.temps.push(item.temperature);
+            chartData.humidities.push(item.humidity);
+        });
+
+        chart.setOption({
+            xAxis: { data: chartData.times },
+            series: [
+                { data: chartData.temps },
+                { data: chartData.humidities }
+            ]
+        });
+    }
+
+    async function loadAlerts() {
+        const response = await request('/api/iot/alert/list?status=0');
+        const alerts = await response.json();
+        const container = document.getElementById('alertList');
+
+        if (alerts.length === 0) {
+            container.innerHTML = '<div class="text-center">暂无告警</div>';
+            return;
+        }
+
+        container.innerHTML = alerts.map(alert => `
+            <div class="alert-item">
+                <strong>${alert.deviceId}</strong> - ${alert.alertMessage}<br>
+                <small>${new Date(alert.createTime).toLocaleString()}</small>
+            </div>
+        `).join('');
+    }
+
+    function addAlertToList(alert) {
+        const container = document.getElementById('alertList');
+        const alertHtml = `
+            <div class="alert-item">
+                <strong>${alert.deviceId}</strong> - ${alert.alertMessage}<br>
+                <small>${new Date().toLocaleString()}</small>
+            </div>
+        `;
+        container.innerHTML = alertHtml + container.innerHTML;
+    }
+
+    function switchDevice() {
+        currentDevice = document.getElementById('deviceSelect').value;
+        refreshChart();
+    }
+
+    // 初始化
+    checkAuth();
+    initChart();
+    initWebSocket();
+    loadAlerts();
+
+    document.getElementById('tenantCode').textContent = getTenantCode();
+</script>
+</body>
+</html>

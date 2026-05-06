@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions
+    xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xmlns:camunda="http://camunda.org/schema/1.0/bpmn"
+    id="Definitions_1"
+    targetNamespace="http://bpmn.io/schema/bpmn">
+
+  <bpmn:process id="replenishment-approval" name="补货审批流程" isExecutable="true" camunda:historyTimeToLive="30">
+
+    <!-- 开始事件 -->
+    <bpmn:startEvent id="StartEvent" name="提交补货申请">
+      <bpmn:outgoing>Flow_to_manager</bpmn:outgoing>
+    </bpmn:startEvent>
+
+    <!-- 主管审批 -->
+    <bpmn:userTask id="ManagerApprove" name="主管审批" camunda:candidateGroups="manager">
+      <bpmn:incoming>Flow_to_manager</bpmn:incoming>
+      <bpmn:outgoing>Flow_to_director</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <!-- 经理审批 -->
+    <bpmn:userTask id="DirectorApprove" name="经理审批" camunda:candidateGroups="director">
+      <bpmn:incoming>Flow_to_director</bpmn:incoming>
+      <bpmn:outgoing>Flow_to_gateway</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <!-- 排他网关 -->
+    <bpmn:exclusiveGateway id="ExclusiveGateway" name="审批结果判断">
+      <bpmn:incoming>Flow_to_gateway</bpmn:incoming>
+      <bpmn:outgoing>Flow_approved</bpmn:outgoing>
+      <bpmn:outgoing>Flow_rejected</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+
+    <!-- 审批通过 -->
+    <bpmn:endEvent id="ApprovedEnd" name="审批通过">
+      <bpmn:incoming>Flow_approved</bpmn:incoming>
+    </bpmn:endEvent>
+
+    <!-- 审批驳回 -->
+    <bpmn:endEvent id="RejectedEnd" name="审批驳回">
+      <bpmn:incoming>Flow_rejected</bpmn:incoming>
+    </bpmn:endEvent>
+
+    <!-- 连线 -->
+    <bpmn:sequenceFlow id="Flow_to_manager" sourceRef="StartEvent" targetRef="ManagerApprove" />
+    <bpmn:sequenceFlow id="Flow_to_director" sourceRef="ManagerApprove" targetRef="DirectorApprove" />
+    <bpmn:sequenceFlow id="Flow_to_gateway" sourceRef="DirectorApprove" targetRef="ExclusiveGateway" />
+
+    <bpmn:sequenceFlow id="Flow_approved" sourceRef="ExclusiveGateway" targetRef="ApprovedEnd">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">
+        ${approved == true}
+      </bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+
+    <bpmn:sequenceFlow id="Flow_rejected" sourceRef="ExclusiveGateway" targetRef="RejectedEnd">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">
+        ${approved == false}
+      </bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+
+  </bpmn:process>
+</bpmn:definitions>

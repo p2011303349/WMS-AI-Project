@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>WMS 仓储管理系统</title>
+    <link rel="stylesheet" href="/css/wms.css">
+</head>
+<body>
+<div class="header">
+    <h2>🏭 WMS 仓储管理系统</h2>
+    <div class="header-info">
+        <span>租户: <span id="tenantCode">-</span></span>
+        <span>用户: <span id="username">-</span></span>
+        <button class="logout-btn" onclick="logout()">退出登录</button>
+    </div>
+</div>
+
+<div class="app-container">
+    <div class="sidebar">
+        <a href="/index.html" class="active">📊 仪表盘</a>
+        <a href="/inbound.html">📥 入库管理</a>
+        <a href="/outbound.html">📤 出库管理</a>
+        <a href="/inventory.html">📦 库存查询</a>
+        <a href="/iot-dashboard.html">📈 IoT仪表盘</a>
+        <a href="/ai-chat.html">🤖 AI聊天</a>
+        <a href="/ai-agent.html">🔧 AI智能体</a>
+        <a href="/replenishment.html" class="active">📝 智能补货</a>
+        <a href="/exception.html">⚠️ 异常管理</a>
+        <a href="/workflow.html" class="active">🔄 工作流</a>
+    </div>
+
+    <div class="main-content">
+        <div class="card">
+            <div class="card-header">
+                <h3>📊 数据概览</h3>
+            </div>
+            <div class="card-body">
+                <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px;">
+                    <div style="text-align: center; padding: 20px; background: #f5f5f5; border-radius: 8px;">
+                        <div style="font-size: 32px; color: #1890ff;" id="asnCount">-</div>
+                        <div>ASN单数量</div>
+                    </div>
+                    <div style="text-align: center; padding: 20px; background: #f5f5f5; border-radius: 8px;">
+                        <div style="font-size: 32px; color: #52c41a;" id="inventoryCount">-</div>
+                        <div>库存SKU数</div>
+                    </div>
+                    <div style="text-align: center; padding: 20px; background: #f5f5f5; border-radius: 8px;">
+                        <div style="font-size: 32px; color: #faad14;" id="todayReceiving">-</div>
+                        <div>今日收货单</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <h3>📋 近期ASN单</h3>
+            </div>
+            <div class="card-body">
+                <table class="data-table" id="asnTable">
+                    <thead>
+                    <tr><th>ASN单号</th><th>供应商</th><th>总数量</th><th>已收数量</th><th>状态</th><th>创建时间</th></tr>
+                    </thead>
+                    <tbody>
+                    <tr><td colspan="6" class="text-center">加载中...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="/js/common.js"></script>
+<script>
+    async function loadDashboard() {
+        if (!checkAuth()) return;
+
+        const tenantCode = getTenantCode();
+        document.getElementById('tenantCode').textContent = tenantCode;
+
+        const token = getToken();
+        try {
+            const payload = JSON.parse(atob(token.split('.')[1]));
+            document.getElementById('username').textContent = payload.username || 'admin';
+        } catch(e) {}
+
+        // 加载ASN列表
+        const response = await request('/api/inbound/asn/list');
+        const asns = await response.json();
+        document.getElementById('asnCount').textContent = asns.length;
+
+        const tbody = document.querySelector('#asnTable tbody');
+        if (asns.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="6" class="text-center">暂无数据</td></tr>';
+        } else {
+            tbody.innerHTML = asns.slice(0, 5).map(asn => `
+                <tr>
+                    <td>${asn.asnNo}</td>
+                    <td>${asn.supplierName || '-'}</td>
+                    <td>${asn.totalQuantity}</td>
+                    <td>${asn.receivedQuantity || 0}</td>
+                    <td><span class="status ${getStatusClass(asn.status)}">${getStatusText(asn.status, 'asn')}</span></td>
+                    <td>${formatDate(asn.createTime)}</td>
+                </tr>
+            `).join('');
+        }
+
+        // 加载库存
+        const invResponse = await request('/api/inbound/inventory/list');
+        const inventory = await invResponse.json();
+        const skuSet = new Set(inventory.map(i => i.skuCode));
+        document.getElementById('inventoryCount').textContent = skuSet.size;
+    }
+
+    loadDashboard();
+</script>
+</body>
+</html>

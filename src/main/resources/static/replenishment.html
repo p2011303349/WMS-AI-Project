@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>智能补货管理 - WMS</title>
+    <link rel="stylesheet" href="/css/wms.css">
+    <style>
+        .stat-card {
+            background: white;
+            border-radius: 8px;
+            padding: 16px;
+            text-align: center;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.03);
+            flex: 1;
+        }
+        .stat-number {
+            font-size: 28px;
+            font-weight: bold;
+            color: #1890ff;
+        }
+        .stat-label {
+            color: #666;
+            font-size: 14px;
+            margin-top: 8px;
+        }
+        .status-pending { background: #faad14; color: white; padding: 2px 8px; border-radius: 4px; font-size: 12px; }
+        .status-approved { background: #52c41a; color: white; padding: 2px 8px; border-radius: 4px; font-size: 12px; }
+        .status-rejected { background: #ff4d4f; color: white; padding: 2px 8px; border-radius: 4px; font-size: 12px; }
+        .status-ordered { background: #1890ff; color: white; padding: 2px 8px; border-radius: 4px; font-size: 12px; }
+    </style>
+</head>
+<body>
+<div class="header">
+    <h2>📦 智能补货管理</h2>
+    <div class="header-info">
+        <span>租户: <span id="tenantCode">-</span></span>
+        <span>用户: <span id="username">-</span></span>
+        <button class="logout-btn" onclick="logout()">退出登录</button>
+    </div>
+</div>
+
+<div class="app-container">
+    <div class="sidebar">
+        <a href="/index.html" class="active">📊 仪表盘</a>
+        <a href="/inbound.html">📥 入库管理</a>
+        <a href="/outbound.html">📤 出库管理</a>
+        <a href="/inventory.html">📦 库存查询</a>
+        <a href="/iot-dashboard.html">📈 IoT仪表盘</a>
+        <a href="/ai-chat.html">🤖 AI聊天</a>
+        <a href="/ai-agent.html">🔧 AI智能体</a>
+        <a href="/replenishment.html" class="active">📝 智能补货</a>
+        <a href="/exception.html">⚠️ 异常管理</a>
+        <a href="/workflow.html" class="active">🔄 工作流</a>
+    </div>
+
+    <div class="main-content">
+        <!-- 统计卡片 -->
+        <div style="display: flex; gap: 16px; margin-bottom: 20px;">
+            <div class="stat-card">
+                <div class="stat-number" id="pendingCount">-</div>
+                <div class="stat-label">待审核</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number" id="approvedCount">-</div>
+                <div class="stat-label">已审核</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number" id="totalCount">-</div>
+                <div class="stat-label">总计</div>
+            </div>
+        </div>
+
+        <!-- 操作按钮 -->
+        <div style="margin-bottom: 16px; display: flex; gap: 12px;">
+            <button class="btn btn-primary" onclick="runAutoScan()">🔍 智能扫描</button>
+            <button class="btn btn-success" onclick="loadReplenishmentList()">🔄 刷新</button>
+        </div>
+
+        <!-- 补货建议列表 -->
+        <div class="card">
+            <div class="card-header">
+                <h3>📋 补货建议单列表</h3>
+                <select id="statusFilter" onchange="loadReplenishmentList()">
+                    <option value="">全部</option>
+                    <option value="0">待审核</option>
+                    <option value="1">已审核</option>
+                    <option value="2">已驳回</option>
+                    <option value="3">已生成采购单</option>
+                </select>
+            </div>
+            <div class="card-body">
+                <table class="data-table" id="replenishmentTable">
+                    <thead>
+                    <tr><th>建议单号</th><th>SKU编码</th><th>商品名称</th><th>当前库存</th><th>建议补货量</th><th>原因</th><th>状态</th><th>创建时间</th><th>操作</th></tr>
+                    </thead>
+                    <tbody>
+                    <tr><td colspan="9" class="text-center">加载中...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 审核弹窗 -->
+<div id="auditModal" class="modal">
+    <div class="modal-content" style="width: 400px;">
+        <div class="modal-header">
+            <h4>审核补货建议</h4>
+            <span class="modal-close" onclick="closeModal('auditModal')">&times;</span>
+        </div>
+        <div class="modal-body">
+            <div class="form-group">
+                <label>建议单号</label>
+                <input type="text" id="auditOrderNo" readonly>
+            </div>
+            <div class="form-group">
+                <label>SKU编码</label>
+                <input type="text" id="auditSkuCode" readonly>
+            </div>
+            <div class="form-group">
+                <label>当前库存</label>
+                <input type="text" id="auditCurrentStock" readonly>
+            </div>
+            <div class="form-group">
+                <label>建议补货量</label>
+                <input type="text" id="auditSuggestQty" readonly>
+            </div>
+            <div class="form-group">
+                <label>审核意见</label>
+                <textarea id="auditComment" rows="3" placeholder="请输入审核意见..."></textarea>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-danger" onclick="submitAudit(false)">驳回</button>
+            <button class="btn btn-success" onclick="submitAudit(true)">通过</button>
+        </div>
+    </div>
+</div>
+
+<script src="/js/common.js"></script>
+<script>
+    let currentAuditId = null;
+
+    async function loadReplenishmentList() {
+        if (!checkAuth()) return;
+        const status = document.getElementById('statusFilter').value;
+        const response = await request(`/api/ai/replenishment/list${status ? `?status=${status}` : ''}`);
+        const list = await response.json();
+
+        const statusMap = {0: '待审核', 1: '已审核', 2: '已驳回', 3: '已生成采购单'};
+        const statusClass = {0: 'status-pending', 1: 'status-approved', 2: 'status-rejected', 3: 'status-ordered'};
+
+        // 更新统计
+        document.getElementById('totalCount').textContent = list.length;
+        document.getElementById('pendingCount').textContent = list.filter(i => i.status === 0).length;
+        document.getElementById('approvedCount').textContent = list.filter(i => i.status === 1).length;
+
+        const tbody = document.querySelector('#replenishmentTable tbody');
+        if (list.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="9" class="text-center">暂无数据</td></tr>';
+            return;
+        }
+
+        tbody.innerHTML = list.map(item => `
+            <tr>
+                <td>${item.orderNo}</td>
+                <td>${item.skuCode}</td>
+                <td>${item.skuName || '-'}</td>
+                <td>${item.currentStock}</td>
+                <td><strong>${item.suggestQuantity}</strong></td>
+                <td>${item.reason || '-'}</td>
+                <td><span class="${statusClass[item.status]}">${statusMap[item.status]}</span></td>
+                <td>${formatDate(item.createTime)}</td>
+                <td>
+                    ${item.status === 0 ? `<button class="btn btn-primary" style="padding:4px 8px;font-size:12px" onclick="showAuditModal(${item.id}, '${item.orderNo}', '${item.skuCode}', ${item.currentStock}, ${item.suggestQuantity})">审核</button>` : '-'}
+                </td>
+            </tr>
+        `).join('');
+    }
+
+    function showAuditModal(id, orderNo, skuCode, currentStock, suggestQty) {
+        currentAuditId = id;
+        document.getElementById('auditOrderNo').value = orderNo;
+        document.getElementById('auditSkuCode').value = skuCode;
+        document.getElementById('auditCurrentStock').value = currentStock;
+        document.getElementById('auditSuggestQty').value = suggestQty;
+        document.getElementById('auditComment').value = '';
+        document.getElementById('auditModal').classList.add('show');
+    }
+
+    async function submitAudit(approved) {
+        if (!currentAuditId) return;
+
+        const comment = document.getElementById('auditComment').value;
+        const response = await request('/api/ai/replenishment/audit', {
+            method: 'POST',
+            body: JSON.stringify({
+                orderId: currentAuditId,
+                approved: approved,
+                comment: comment
+            })
+        });
+        const result = await response.json();
+        if (result.success) {
+            showMessage(result.message);
+            closeModal('auditModal');
+            loadReplenishmentList();
+        } else {
+            showMessage(result.message, 'error');
+        }
+    }
+
+    async function runAutoScan() {
+        showMessage('正在执行智能扫描...', 'warning');
+        const response = await request('/api/ai/replenishment/scan', { method: 'POST' });
+        const result = await response.json();
+        showMessage(result.message);
+        loadReplenishmentList();
+    }
+
+    function closeModal(modalId) {
+        document.getElementById(modalId).classList.remove('show');
+    }
+
+    // 初始化
+    checkAuth();
+    loadReplenishmentList();
+    document.getElementById('tenantCode').textContent = getTenantCode();
+    const token = getToken();
+    if (token) {
+        try {
+            const payload = JSON.parse(atob(token.split('.')[1]));
+            document.getElementById('username').textContent = payload.username || 'admin';
+        } catch(e) {}
+    }
+</script>
+</body>
+</html>

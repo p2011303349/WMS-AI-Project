@@ -1,0 +1,557 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>出库管理 - WMS</title>
+  <link rel="stylesheet" href="/css/wms.css">
+  <style>
+    .path-container {
+        background: #f5f5f5;
+        padding: 15px;
+        border-radius: 8px;
+        margin-top: 10px;
+        font-family: monospace;
+        font-size: 14px;
+    }
+    .step {
+        display: inline-block;
+        background: #1890ff;
+        color: white;
+        padding: 4px 12px;
+        border-radius: 20px;
+        margin: 4px;
+        font-size: 12px;
+    }
+    .status-cancelled {
+        background: #ff4d4f;
+        color: white;
+        padding: 2px 8px;
+        border-radius: 4px;
+        font-size: 12px;
+        display: inline-block;
+    }
+    .btn-danger {
+        background: #ff4d4f;
+        color: white;
+    }
+    .btn-danger:hover {
+        background: #ff7875;
+    }
+  </style>
+</head>
+<body>
+<div class="header">
+  <h2>🏭 WMS 仓储管理系统</h2>
+  <div class="header-info">
+    <span>租户: <span id="tenantCode">-</span></span>
+    <span>用户: <span id="username">-</span></span>
+    <button class="logout-btn" onclick="logout()">退出登录</button>
+  </div>
+</div>
+
+<div class="app-container">
+  <div class="sidebar">
+    <a href="/index.html" class="active">📊 仪表盘</a>
+    <a href="/inbound.html">📥 入库管理</a>
+    <a href="/outbound.html">📤 出库管理</a>
+    <a href="/inventory.html">📦 库存查询</a>
+    <a href="/iot-dashboard.html">📈 IoT仪表盘</a>
+    <a href="/ai-chat.html">🤖 AI聊天</a>
+    <a href="/ai-agent.html">🔧 AI智能体</a>
+    <a href="/replenishment.html" class="active">📝 智能补货</a>
+    <a href="/exception.html">⚠️ 异常管理</a>
+    <a href="/workflow.html" class="active">🔄 工作流</a>
+  </div>
+
+  <div class="main-content">
+    <!-- 操作按钮 -->
+    <div style="margin-bottom: 16px; display: flex; gap: 12px;">
+      <button class="btn btn-primary" onclick="showCreateOrderModal()">+ 创建出库单</button>
+      <button class="btn btn-success" onclick="showCreateWaveModal()">📦 创建波次</button>
+      <button class="btn btn-warning" onclick="showPickingModal()">✅ 拣货管理</button>
+      <button class="btn btn-default" onclick="loadAll()">🔄 刷新</button>
+    </div>
+
+    <!-- 出库单列表 -->
+    <div class="card">
+      <div class="card-header">
+        <h3>📋 出库单列表</h3>
+        <select id="orderStatusFilter" onchange="loadOrders()">
+          <option value="">全部</option>
+          <option value="0">待分配</option>
+          <option value="1">拣货中</option>
+          <option value="2">已拣货</option>
+          <option value="4">已出库</option>
+          <option value="5">已取消</option>
+        </select>
+      </div>
+      <div class="card-body">
+        <table class="data-table" id="orderTable">
+          <thead>
+          <tr><th>单号</th><th>客户</th><th>类型</th><th>优先级</th><th>数量</th><th>状态</th><th>创建时间</th><th>操作</th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- 波次列表 -->
+    <div class="card">
+      <div class="card-header">
+        <h3>📦 波次列表</h3>
+      </div>
+      <div class="card-body">
+        <table class="data-table" id="waveTable">
+          <thead>
+          <tr><th>波次号</th><th>订单数</th><th>总数量</th><th>状态</th><th>创建时间</th><th>操作</th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 创建出库单弹窗 -->
+<div id="orderModal" class="modal">
+  <div class="modal-content" style="width: 600px;">
+    <div class="modal-header">
+      <h4>创建出库单</h4>
+      <span class="modal-close" onclick="closeModal('orderModal')">&times;</span>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label>订单号</label>
+        <input type="text" id="orderNo" placeholder="OUT20260114001">
+      </div>
+      <div class="form-group">
+        <label>客户名称</label>
+        <input type="text" id="customerName">
+      </div>
+      <div class="form-group">
+        <label>出库类型</label>
+        <select id="orderType">
+          <option value="0">销售出库</option>
+          <option value="1">采购退货</option>
+          <option value="2">调拨出库</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>优先级</label>
+        <select id="priority">
+          <option value="0">普通</option>
+          <option value="1">加急</option>
+          <option value="2">特急</option>
+        </select>
+      </div>
+      <h4>商品明细</h4>
+      <div id="orderDetails">
+        <div class="form-row">
+          <input type="text" placeholder="SKU编码" class="detail-sku" style="flex:2">
+          <input type="text" placeholder="商品名称" class="detail-name" style="flex:3">
+          <input type="number" placeholder="数量" class="detail-qty" style="flex:1">
+          <button type="button" onclick="removeDetail(this)" style="background:#ff4d4f;color:white;border:none;padding:0 10px;border-radius:4px;">删除</button>
+        </div>
+      </div>
+      <button type="button" class="btn btn-default" onclick="addOrderDetail()">+ 添加商品</button>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-default" onclick="closeModal('orderModal')">取消</button>
+      <button class="btn btn-primary" onclick="createOrder()">创建</button>
+    </div>
+  </div>
+</div>
+
+<!-- 创建波次弹窗 -->
+<div id="waveModal" class="modal">
+  <div class="modal-content">
+    <div class="modal-header">
+      <h4>创建波次</h4>
+      <span class="modal-close" onclick="closeModal('waveModal')">&times;</span>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label>选择订单</label>
+        <div id="orderCheckboxList"></div>
+      </div>
+      <div class="form-group">
+        <label>波次类型</label>
+        <select id="waveType">
+          <option value="0">按时间</option>
+          <option value="1">按区域</option>
+          <option value="2">按承运商</option>
+        </select>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-default" onclick="closeModal('waveModal')">取消</button>
+      <button class="btn btn-primary" onclick="createWave()">创建波次</button>
+    </div>
+  </div>
+</div>
+
+<!-- 拣货管理弹窗 -->
+<div id="pickingModal" class="modal">
+  <div class="modal-content" style="width: 700px;">
+    <div class="modal-header">
+      <h4>拣货管理</h4>
+      <span class="modal-close" onclick="closeModal('pickingModal')">&times;</span>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label>选择拣货任务</label>
+        <select id="pickingTaskSelect" onchange="showTaskPath()">
+          <option value="">请选择</option>
+        </select>
+      </div>
+      <div id="routePathDisplay" class="path-container"></div>
+      <div class="form-group">
+        <label>拣货员ID</label>
+        <input type="text" id="pickerId" placeholder="1001">
+      </div>
+      <div class="form-group">
+        <label>拣货员姓名</label>
+        <input type="text" id="pickerName" placeholder="张三">
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-default" onclick="closeModal('pickingModal')">取消</button>
+      <button class="btn btn-success" onclick="startPicking()">开始拣货</button>
+      <button class="btn btn-primary" onclick="completePicking()">完成拣货</button>
+    </div>
+  </div>
+</div>
+
+<script src="/js/common.js"></script>
+<script>
+  let orderDetails = [];
+
+  function addOrderDetail() {
+      const container = document.getElementById('orderDetails');
+      const div = document.createElement('div');
+      div.className = 'form-row';
+      div.innerHTML = `
+          <input type="text" placeholder="SKU编码" class="detail-sku" style="flex:2">
+          <input type="text" placeholder="商品名称" class="detail-name" style="flex:3">
+          <input type="number" placeholder="数量" class="detail-qty" style="flex:1">
+          <button type="button" onclick="removeDetail(this)" style="background:#ff4d4f;color:white;border:none;padding:0 10px;border-radius:4px;">删除</button>
+      `;
+      container.appendChild(div);
+  }
+
+  function removeDetail(btn) {
+      btn.parentElement.remove();
+  }
+
+  async function createOrder() {
+      const orderNo = document.getElementById('orderNo').value;
+      if (!orderNo) {
+          showMessage('请输入订单号', 'error');
+          return;
+      }
+
+      const details = [];
+      document.querySelectorAll('#orderDetails .form-row').forEach(row => {
+          const sku = row.querySelector('.detail-sku')?.value;
+          const name = row.querySelector('.detail-name')?.value;
+          const qty = row.querySelector('.detail-qty')?.value;
+          if (sku && qty) {
+              details.push({ skuCode: sku, skuName: name, quantity: parseInt(qty) });
+          }
+      });
+
+      if (details.length === 0) {
+          showMessage('请添加商品明细', 'error');
+          return;
+      }
+
+      const totalQuantity = details.reduce((sum, d) => sum + d.quantity, 0);
+
+      const data = {
+          order: {
+              orderNo: orderNo,
+              customerName: document.getElementById('customerName').value,
+              orderType: parseInt(document.getElementById('orderType').value),
+              priority: parseInt(document.getElementById('priority').value),
+              totalQuantity: totalQuantity,
+              remark: ''
+          },
+          details: details
+      };
+
+      try {
+          const response = await request('/api/outbound/order', {
+              method: 'POST',
+              body: JSON.stringify(data)
+          });
+          const result = await response.json();
+          if (result.success) {
+              showMessage('出库单创建成功');
+              closeModal('orderModal');
+              loadOrders();
+              resetOrderForm();
+          }
+      } catch (err) {
+          showMessage('创建失败: ' + err.message, 'error');
+      }
+  }
+
+  function resetOrderForm() {
+      document.getElementById('orderNo').value = '';
+      document.getElementById('customerName').value = '';
+      document.getElementById('orderDetails').innerHTML = `
+          <div class="form-row">
+              <input type="text" placeholder="SKU编码" class="detail-sku" style="flex:2">
+              <input type="text" placeholder="商品名称" class="detail-name" style="flex:3">
+              <input type="number" placeholder="数量" class="detail-qty" style="flex:1">
+              <button type="button" onclick="removeDetail(this)" style="background:#ff4d4f;color:white;border:none;padding:0 10px;border-radius:4px;">删除</button>
+          </div>
+      `;
+  }
+
+  async function loadOrders() {
+      if (!checkAuth()) return;
+      const status = document.getElementById('orderStatusFilter').value;
+      const response = await request(`/api/outbound/order/list${status ? `?status=${status}` : ''}`);
+      const orders = await response.json();
+
+      const tbody = document.querySelector('#orderTable tbody');
+      const typeMap = {0: '销售出库', 1: '采购退货', 2: '调拨出库'};
+      const priorityMap = {0: '普通', 1: '加急', 2: '特急'};
+      const statusMap = {0: '待分配', 1: '拣货中', 2: '已拣货', 4: '已出库', 5: '已取消'};
+
+      tbody.innerHTML = orders.map(order => {
+          // 判断是否显示取消按钮（状态为待分配或拣货中时显示）
+          const showCancelBtn = order.status === 0 || order.status === 1;
+          // 判断是否显示发货按钮（状态为已拣货时显示）
+          const showShipBtn = order.status === 2;
+
+          return `
+          <tr>
+              <td>${order.orderNo}</td>
+              <td>${order.customerName || '-'}</td>
+              <td>${typeMap[order.orderType] || '-'}</td>
+              <td>${priorityMap[order.priority] || '-'}</td>
+              <td>${order.totalQuantity}</td>
+              <td>${order.status === 5 ? '<span class="status-cancelled">已取消</span>' : `<span class="status status-pending">${statusMap[order.status] || '-'}</span>`}</td>
+              <td>${formatDate(order.createTime)}</td>
+              <td>
+                  ${showCancelBtn ? `<button class="btn btn-danger" style="padding:4px 8px;font-size:12px;margin-right:5px" onclick="cancelOrder(${order.id})">取消订单</button>` : ''}
+                  ${showShipBtn ? `<button class="btn btn-primary" style="padding:4px 8px;font-size:12px" onclick="shipOut(${order.id})">发货</button>` : ''}
+                  ${order.status === 4 ? '已发货' : ''}
+                  ${order.status === 5 ? '已取消' : ''}
+              </td>
+          </tr>
+          `;
+      }).join('');
+  }
+
+  async function shipOut(orderId) {
+      if (confirm('确认发货吗？')) {
+          const response = await request(`/api/outbound/ship?orderId=${orderId}`, { method: 'POST' });
+          const result = await response.json();
+          if (result.success) {
+              showMessage('发货成功');
+              loadOrders();
+          }
+      }
+  }
+
+  // 取消订单
+  async function cancelOrder(orderId) {
+      if (confirm('确认取消该订单吗？\n\n取消后：\n1. 订单状态将变为"已取消"\n2. 已锁定的库存将自动解冻\n3. 该订单占用的库存可重新分配')) {
+          try {
+              const response = await request(`/api/outbound/order/cancel?orderId=${orderId}`, {
+                  method: 'POST'
+              });
+              const result = await response.json();
+              if (result.success) {
+                  showMessage('订单已取消，库存已解冻');
+                  loadOrders();  // 刷新订单列表
+                  // 如果存在库存列表刷新函数
+                  if (typeof loadInventoryList === 'function') {
+                      loadInventoryList();
+                  }
+              } else {
+                  showMessage(result.message || '取消失败', 'error');
+              }
+          } catch (err) {
+              showMessage('取消失败: ' + err.message, 'error');
+          }
+      }
+  }
+
+  async function showCreateWaveModal() {
+      const response = await request('/api/outbound/order/list?status=0');
+      const orders = await response.json();
+
+      const container = document.getElementById('orderCheckboxList');
+      if (orders.length === 0) {
+          container.innerHTML = '<p>暂无待分配的订单</p>';
+      } else {
+          container.innerHTML = orders.map(order => `
+              <label style="display:block; margin:8px 0">
+                  <input type="checkbox" value="${order.id}"> ${order.orderNo} - ${order.customerName} (${order.totalQuantity}件)
+              </label>
+          `).join('');
+      }
+      document.getElementById('waveModal').classList.add('show');
+  }
+
+  async function createWave() {
+      const orderIds = [];
+      document.querySelectorAll('#orderCheckboxList input:checked').forEach(cb => {
+          orderIds.push(parseInt(cb.value));
+      });
+
+      if (orderIds.length === 0) {
+          showMessage('请选择订单', 'error');
+          return;
+      }
+
+      const waveType = document.getElementById('waveType').value;
+      const response = await request('/api/outbound/wave', {
+          method: 'POST',
+          body: JSON.stringify({ orderIds: orderIds, waveType: parseInt(waveType) })
+      });
+      const wave = await response.json();
+
+      // 自动创建拣货任务
+      await request(`/api/outbound/picking-task?waveId=${wave.id}`, { method: 'POST' });
+
+      showMessage('波次创建成功');
+      closeModal('waveModal');
+      loadWaves();
+      loadOrders();
+  }
+
+  async function loadWaves() {
+      const response = await request('/api/outbound/wave/list');
+      const waves = await response.json();
+
+      const tbody = document.querySelector('#waveTable tbody');
+      const statusMap = {0: '待拣货', 1: '拣货中', 2: '已完成'};
+
+      tbody.innerHTML = waves.map(wave => `
+          <tr>
+              <td>${wave.waveNo}</td>
+              <td>${wave.orderCount}</td>
+              <td>${wave.totalQuantity}</td>
+              <td><span class="status ${wave.status === 2 ? 'status-completed' : 'status-processing'}">${statusMap[wave.status]}</span></td>
+              <td>${formatDate(wave.createTime)}</td>
+              <td><button class="btn btn-warning" style="padding:4px 8px;font-size:12px" onclick="viewPickingTask(${wave.id})">查看拣货</button>
+          </tr>
+      `).join('');
+  }
+
+  async function viewPickingTask(waveId) {
+      const response = await request(`/api/outbound/picking-task/list`);
+      const tasks = await response.json();
+      const task = tasks.find(t => t.waveId === waveId);
+      if (task) {
+          await showPickingModal();
+          setTimeout(() => {
+              document.getElementById('pickingTaskSelect').value = task.id;
+              showTaskPath();
+          }, 100);
+      }
+  }
+
+  async function showPickingModal() {
+      const response = await request('/api/outbound/picking-task/list');
+      const tasks = await response.json();
+      const select = document.getElementById('pickingTaskSelect');
+      select.innerHTML = '<option value="">请选择</option>' +
+          tasks.map(t => `<option value="${t.id}">任务${t.id} - 状态:${t.status === 0 ? '待拣货' : t.status === 1 ? '拣货中' : '已完成'}</option>`).join('');
+
+      document.getElementById('pickingModal').classList.add('show');
+  }
+
+  function showTaskPath() {
+      const select = document.getElementById('pickingTaskSelect');
+      const selectedOption = select.options[select.selectedIndex];
+      // 这里可以从后端获取路径，简化处理
+      const pathDiv = document.getElementById('routePathDisplay');
+      if (selectedOption && selectedOption.value) {
+          pathDiv.innerHTML = '<strong>📌 拣货路径规划：</strong><br>货位A-01-01 → 货位A-01-02 → 货位B-01-01';
+      } else {
+          pathDiv.innerHTML = '<strong>📌 拣货路径规划：</strong><br>请选择一个拣货任务';
+      }
+  }
+
+  async function startPicking() {
+      const taskId = document.getElementById('pickingTaskSelect').value;
+      const pickerId = document.getElementById('pickerId').value;
+      const pickerName = document.getElementById('pickerName').value;
+
+      if (!taskId) {
+          showMessage('请选择拣货任务', 'error');
+          return;
+      }
+      if (!pickerId || !pickerName) {
+          showMessage('请填写拣货员信息', 'error');
+          return;
+      }
+
+      const response = await request('/api/outbound/picking/start', {
+          method: 'POST',
+          body: JSON.stringify({ taskId: parseInt(taskId), pickerId: parseInt(pickerId), pickerName: pickerName })
+      });
+      const result = await response.json();
+      if (result.success) {
+          showMessage('开始拣货');
+          closeModal('pickingModal');
+          loadWaves();
+      } else {
+          showMessage(result.message || '开始拣货失败', 'error');
+      }
+  }
+
+  async function completePicking() {
+      const taskId = document.getElementById('pickingTaskSelect').value;
+      if (!taskId) {
+          showMessage('请选择拣货任务', 'error');
+          return;
+      }
+
+      const response = await request(`/api/outbound/picking/complete?taskId=${taskId}`, { method: 'POST' });
+      const result = await response.json();
+      if (result.success) {
+          showMessage('拣货完成');
+          closeModal('pickingModal');
+          loadWaves();
+          loadOrders();
+      } else {
+          showMessage(result.message || '完成拣货失败', 'error');
+      }
+  }
+
+  function showCreateOrderModal() {
+      resetOrderForm();
+      document.getElementById('orderModal').classList.add('show');
+  }
+
+  function closeModal(modalId) {
+      document.getElementById(modalId).classList.remove('show');
+  }
+
+  async function loadAll() {
+      await loadOrders();
+      await loadWaves();
+  }
+
+  // 初始化
+  checkAuth();
+  loadAll();
+
+  document.getElementById('tenantCode').textContent = getTenantCode();
+  const token = getToken();
+  if (token) {
+      try {
+          const payload = JSON.parse(atob(token.split('.')[1]));
+          document.getElementById('username').textContent = payload.username || 'admin';
+      } catch(e) {}
+  }
+</script>
+</body>
+</html>

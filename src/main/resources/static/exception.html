@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>异常管理 - WMS</title>
+  <link rel="stylesheet" href="/css/wms.css">
+  <style>
+    .exception-card {
+        background: #fff2f0;
+        border-left: 3px solid #ff4d4f;
+    }
+    .exception-resolved {
+        background: #f6ffed;
+        border-left-color: #52c41a;
+    }
+    .exception-processing {
+        background: #e6f7ff;
+        border-left-color: #1890ff;
+    }
+    .suggestion-box {
+        background: #f5f5f5;
+        padding: 12px;
+        border-radius: 4px;
+        margin-top: 8px;
+        font-size: 13px;
+    }
+  </style>
+</head>
+<body>
+<div class="header">
+  <h2>⚠️ 异常管理</h2>
+  <div class="header-info">
+    <span>租户: <span id="tenantCode">-</span></span>
+    <span>用户: <span id="username">-</span></span>
+    <button class="logout-btn" onclick="logout()">退出登录</button>
+  </div>
+</div>
+
+<div class="app-container">
+  <div class="sidebar">
+    <a href="/index.html" class="active">📊 仪表盘</a>
+    <a href="/inbound.html">📥 入库管理</a>
+    <a href="/outbound.html">📤 出库管理</a>
+    <a href="/inventory.html">📦 库存查询</a>
+    <a href="/iot-dashboard.html">📈 IoT仪表盘</a>
+    <a href="/ai-chat.html">🤖 AI聊天</a>
+    <a href="/ai-agent.html">🔧 AI智能体</a>
+    <a href="/replenishment.html" class="active">📝 智能补货</a>
+    <a href="/exception.html">⚠️ 异常管理</a>
+    <a href="/workflow.html" class="active">🔄 工作流</a>
+  </div>
+
+  <div class="main-content">
+    <!-- 统计卡片 -->
+    <div style="display: flex; gap: 16px; margin-bottom: 20px;">
+      <div class="stat-card">
+        <div class="stat-number" id="pendingCount">-</div>
+        <div class="stat-label">待处理</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-number" id="processingCount">-</div>
+        <div class="stat-label">处理中</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-number" id="resolvedCount">-</div>
+        <div class="stat-label">已处理</div>
+      </div>
+    </div>
+
+    <!-- 操作按钮 -->
+    <div style="margin-bottom: 16px; display: flex; gap: 12px;">
+      <button class="btn btn-primary" onclick="runExceptionScan()">🔍 扫描异常</button>
+      <button class="btn btn-success" onclick="loadExceptionList()">🔄 刷新</button>
+    </div>
+
+    <!-- 异常列表 -->
+    <div class="card">
+      <div class="card-header">
+        <h3>⚠️ 异常记录列表</h3>
+        <select id="statusFilter" onchange="loadExceptionList()">
+          <option value="">全部</option>
+          <option value="0">待处理</option>
+          <option value="1">处理中</option>
+          <option value="2">已处理</option>
+        </select>
+      </div>
+      <div class="card-body" id="exceptionList">
+        <div class="text-center">加载中...</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 处理弹窗 -->
+<div id="handleModal" class="modal">
+  <div class="modal-content" style="width: 500px;">
+    <div class="modal-header">
+      <h4>处理异常</h4>
+      <span class="modal-close" onclick="closeModal('handleModal')">&times;</span>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label>异常ID</label>
+        <input type="text" id="handleExceptionId" readonly>
+      </div>
+      <div class="form-group">
+        <label>订单号</label>
+        <input type="text" id="handleOrderNo" readonly>
+      </div>
+      <div class="form-group">
+        <label>异常类型</label>
+        <input type="text" id="handleExceptionType" readonly>
+      </div>
+      <div class="form-group">
+        <label>异常详情</label>
+        <textarea id="handleExceptionDetail" rows="3" readonly></textarea>
+      </div>
+      <div class="form-group">
+        <label>AI处理建议</label>
+        <textarea id="handleSuggestion" rows="3" readonly></textarea>
+      </div>
+      <div class="form-group">
+        <label>处理备注</label>
+        <textarea id="handleRemark" rows="2" placeholder="请输入处理备注..."></textarea>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-default" onclick="closeModal('handleModal')">取消</button>
+      <button class="btn btn-primary" onclick="submitHandle()">确认处理</button>
+    </div>
+  </div>
+</div>
+
+<script src="/js/common.js"></script>
+<script>
+  let currentException = null;
+
+  async function loadExceptionList() {
+      if (!checkAuth()) return;
+      const status = document.getElementById('statusFilter').value;
+      const response = await request(`/api/ai/exception/list${status ? `?status=${status}` : ''}`);
+      const list = await response.json();
+
+      // 更新统计
+      document.getElementById('pendingCount').textContent = list.filter(i => i.status === 0).length;
+      document.getElementById('processingCount').textContent = list.filter(i => i.status === 1).length;
+      document.getElementById('resolvedCount').textContent = list.filter(i => i.status === 2).length;
+
+      const container = document.getElementById('exceptionList');
+      if (list.length === 0) {
+          container.innerHTML = '<div class="text-center">暂无异常记录</div>';
+          return;
+      }
+
+      const typeMap = {
+          'INSUFFICIENT_STOCK': '库存不足',
+          'ADDRESS_ERROR': '地址错误',
+          'OTHER': '其他'
+      };
+      const statusMap = {0: '待处理', 1: '处理中', 2: '已处理'};
+
+      container.innerHTML = list.map(item => `
+          <div class="card exception-card ${item.status === 2 ? 'exception-resolved' : item.status === 1 ? 'exception-processing' : ''}" style="margin-bottom: 12px;">
+              <div style="padding: 16px;">
+                  <div style="display: flex; justify-content: space-between; align-items: center;">
+                      <div>
+                          <strong>订单号:</strong> ${item.orderNo} &nbsp;|&nbsp;
+                          <strong>异常类型:</strong> ${typeMap[item.exceptionType] || item.exceptionType}
+                      </div>
+                      <div>
+                          <span class="status ${item.status === 0 ? 'status-pending' : item.status === 1 ? 'status-processing' : 'status-completed'}">${statusMap[item.status]}</span>
+                      </div>
+                  </div>
+                  <div style="margin-top: 8px; color: #666;">
+                      <strong>异常详情:</strong> ${item.exceptionDetail}
+                  </div>
+                  ${item.suggestion ? `
+                  <div class="suggestion-box">
+                      <strong>🤖 AI处理建议:</strong><br>
+                      ${item.suggestion}
+                  </div>
+                  ` : ''}
+                  <div style="margin-top: 12px; font-size: 12px; color: #999;">
+                      创建时间: ${formatDate(item.createTime)}
+                  </div>
+                  <div style="margin-top: 12px;">
+                      ${item.status === 0 ? `<button class="btn btn-primary" style="padding:4px 12px;font-size:12px" onclick="showHandleModal(${JSON.stringify(item).replace(/"/g, '&quot;')})">处理</button>` : ''}
+                      ${item.status === 0 ? `<button class="btn btn-warning" style="padding:4px 12px;font-size:12px;margin-left:8px" onclick="generateSuggestion(${item.id})">生成AI建议</button>` : ''}
+                  </div>
+              </div>
+          </div>
+      `).join('');
+  }
+
+  function showHandleModal(exception) {
+      currentException = exception;
+      document.getElementById('handleExceptionId').value = exception.id;
+      document.getElementById('handleOrderNo').value = exception.orderNo;
+      document.getElementById('handleExceptionType').value = exception.exceptionType;
+      document.getElementById('handleExceptionDetail').value = exception.exceptionDetail;
+      document.getElementById('handleSuggestion').value = exception.suggestion || '';
+      document.getElementById('handleRemark').value = '';
+      document.getElementById('handleModal').classList.add('show');
+  }
+
+  async function submitHandle() {
+      if (!currentException) return;
+
+      const remark = document.getElementById('handleRemark').value;
+      const response = await request('/api/ai/exception/handle', {
+          method: 'POST',
+          body: JSON.stringify({
+              exceptionId: currentException.id,
+              remark: remark
+          })
+      });
+      const result = await response.json();
+      if (result.success) {
+          showMessage(result.message);
+          closeModal('handleModal');
+          loadExceptionList();
+      } else {
+          showMessage(result.message, 'error');
+      }
+  }
+
+  async function generateSuggestion(exceptionId) {
+      showMessage('正在生成AI处理建议...', 'warning');
+      const response = await request(`/api/ai/exception/suggestion?exceptionId=${exceptionId}`, { method: 'POST' });
+      const result = await response.json();
+      if (result.success) {
+          showMessage(result.message);
+          loadExceptionList();
+      } else {
+          showMessage(result.message, 'error');
+      }
+  }
+
+  async function runExceptionScan() {
+      showMessage('正在扫描异常订单...', 'warning');
+      const response = await request('/api/ai/exception/scan', { method: 'POST' });
+      const result = await response.json();
+      showMessage(result.message);
+      loadExceptionList();
+  }
+
+  function closeModal(modalId) {
+      document.getElementById(modalId).classList.remove('show');
+  }
+
+  // 初始化
+  checkAuth();
+  loadExceptionList();
+  document.getElementById('tenantCode').textContent = getTenantCode();
+  const token = getToken();
+  if (token) {
+      try {
+          const payload = JSON.parse(atob(token.split('.')[1]));
+          document.getElementById('username').textContent = payload.username || 'admin';
+      } catch(e) {}
+  }
+</script>
+</body>
+</html>

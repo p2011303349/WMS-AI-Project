@@ -1,0 +1,448 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>入库管理 - WMS</title>
+  <link rel="stylesheet" href="/css/wms.css">
+</head>
+<body>
+<div class="header">
+  <h2>🏭 WMS 仓储管理系统</h2>
+  <div class="header-info">
+    <span>租户: <span id="tenantCode">-</span></span>
+    <span>用户: <span id="username">-</span></span>
+    <button class="logout-btn" onclick="logout()">退出登录</button>
+  </div>
+</div>
+
+<div class="app-container">
+  <div class="sidebar">
+    <a href="/index.html" class="active">📊 仪表盘</a>
+    <a href="/inbound.html">📥 入库管理</a>
+    <a href="/outbound.html">📤 出库管理</a>
+    <a href="/inventory.html">📦 库存查询</a>
+    <a href="/iot-dashboard.html">📈 IoT仪表盘</a>
+    <a href="/ai-chat.html">🤖 AI聊天</a>
+    <a href="/ai-agent.html">🔧 AI智能体</a>
+    <a href="/replenishment.html" class="active">📝 智能补货</a>
+    <a href="/exception.html">⚠️ 异常管理</a>
+    <a href="/workflow.html" class="active">🔄 工作流</a>
+  </div>
+
+  <div class="main-content">
+    <!-- 操作按钮 -->
+    <div style="margin-bottom: 16px; display: flex; gap: 12px;">
+      <button class="btn btn-primary" onclick="showCreateAsnModal()">+ 创建ASN单</button>
+      <button class="btn btn-success" onclick="showReceiveModal()">📦 收货</button>
+      <button class="btn btn-warning" onclick="showQualityModal()">✅ 质检上架</button>
+      <button class="btn btn-default" onclick="loadAsnList()">🔄 刷新</button>
+    </div>
+
+    <!-- ASN列表 -->
+    <div class="card">
+      <div class="card-header">
+        <h3>📋 ASN单列表</h3>
+        <select id="statusFilter" onchange="loadAsnList()" style="padding: 4px 8px;">
+          <option value="">全部状态</option>
+          <option value="0">待收货</option>
+          <option value="1">收货中</option>
+          <option value="2">已完成</option>
+        </select>
+      </div>
+      <div class="card-body">
+        <table class="data-table" id="asnTable">
+          <thead>
+          <tr><th>ID</th><th>ASN单号</th><th>供应商</th><th>总数量</th><th>已收数量</th><th>状态</th><th>创建时间</th><th>操作</th></tr>
+          </thead>
+          <tbody>
+          <tr><td colspan="8" class="text-center">加载中...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- 库存列表 -->
+    <div class="card">
+      <div class="card-header">
+        <h3>📦 当前库存</h3>
+        <input type="text" id="skuSearch" placeholder="搜索SKU" onkeyup="loadInventory()" style="padding: 4px 8px; width: 200px;">
+      </div>
+      <div class="card-body">
+        <table class="data-table" id="inventoryTable">
+          <thead>
+          <tr><th>SKU编码</th><th>商品名称</th><th>批次号</th><th>库存数量</th><th>锁定数量</th><th>可用数量</th><th>有效期</th></tr>
+          </thead>
+          <tbody>
+          <tr><td colspan="7" class="text-center">加载中...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 创建ASN弹窗 -->
+<div id="asnModal" class="modal">
+  <div class="modal-content">
+    <div class="modal-header">
+      <h4>创建ASN单</h4>
+      <span class="modal-close" onclick="closeModal('asnModal')">&times;</span>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label>ASN单号</label>
+        <input type="text" id="asnNo" placeholder="ASN20260113001">
+      </div>
+      <div class="form-group">
+        <label>供应商名称</label>
+        <input type="text" id="supplierName" placeholder="供应商名称">
+      </div>
+      <div class="form-group">
+        <label>预计到货时间</label>
+        <input type="datetime-local" id="expectedDate">
+      </div>
+      <div class="form-group">
+        <label>备注</label>
+        <textarea id="asnRemark" rows="2"></textarea>
+      </div>
+      <h4 style="margin: 16px 0 12px;">商品明细</h4>
+      <div id="asnDetails">
+        <div class="form-row">
+          <input type="text" placeholder="SKU编码" class="detail-sku" style="flex:2">
+          <input type="text" placeholder="商品名称" class="detail-name" style="flex:3">
+          <input type="number" placeholder="数量" class="detail-qty" style="flex:1">
+          <input type="text" placeholder="单位" class="detail-unit" style="flex:1">
+          <button type="button" onclick="removeDetail(this)" style="background:#ff4d4f;color:white;border:none;padding:0 10px;border-radius:4px;">删除</button>
+        </div>
+      </div>
+      <button type="button" class="btn btn-default" onclick="addDetailRow()" style="margin-top: 10px;">+ 添加商品</button>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-default" onclick="closeModal('asnModal')">取消</button>
+      <button class="btn btn-primary" onclick="createAsn()">创建</button>
+    </div>
+  </div>
+</div>
+
+<!-- 收货弹窗 -->
+<div id="receiveModal" class="modal">
+  <div class="modal-content">
+    <div class="modal-header">
+      <h4>收货</h4>
+      <span class="modal-close" onclick="closeModal('receiveModal')">&times;</span>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label>选择ASN单</label>
+        <select id="receiveAsnId" style="width:100%">
+          <option value="">请选择</option>
+        </select>
+      </div>
+      <div id="receiveItems"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-default" onclick="closeModal('receiveModal')">取消</button>
+      <button class="btn btn-primary" onclick="receiveGoods()">确认收货</button>
+    </div>
+  </div>
+</div>
+
+<!-- 质检弹窗 -->
+<div id="qualityModal" class="modal">
+  <div class="modal-content" style="width: 600px;">
+    <div class="modal-header">
+      <h4>质检上架</h4>
+      <span class="modal-close" onclick="closeModal('qualityModal')">&times;</span>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label>选择收货单</label>
+        <select id="qualityReceivingId" style="width:100%">
+          <option value="">请选择</option>
+        </select>
+      </div>
+      <div id="qualityItems"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-default" onclick="closeModal('qualityModal')">取消</button>
+      <button class="btn btn-primary" onclick="qualityCheck()">确认上架</button>
+    </div>
+  </div>
+</div>
+
+<script src="/js/common.js"></script>
+<script>
+  let asnDetails = [];
+
+  function addDetailRow() {
+      const container = document.getElementById('asnDetails');
+      const div = document.createElement('div');
+      div.className = 'form-row';
+      div.innerHTML = `
+          <input type="text" placeholder="SKU编码" class="detail-sku" style="flex:2">
+          <input type="text" placeholder="商品名称" class="detail-name" style="flex:3">
+          <input type="number" placeholder="数量" class="detail-qty" style="flex:1">
+          <input type="text" placeholder="单位" class="detail-unit" style="flex:1">
+          <button type="button" onclick="removeDetail(this)" style="background:#ff4d4f;color:white;border:none;padding:0 10px;border-radius:4px;">删除</button>
+      `;
+      container.appendChild(div);
+  }
+
+  function removeDetail(btn) {
+      btn.parentElement.remove();
+  }
+
+  async function createAsn() {
+      const asnNo = document.getElementById('asnNo').value;
+      if (!asnNo) {
+          showMessage('请输入ASN单号', 'error');
+          return;
+      }
+
+      const details = [];
+      document.querySelectorAll('#asnDetails .form-row').forEach(row => {
+          const sku = row.querySelector('.detail-sku')?.value;
+          const name = row.querySelector('.detail-name')?.value;
+          const qty = row.querySelector('.detail-qty')?.value;
+          const unit = row.querySelector('.detail-unit')?.value;
+          if (sku && qty) {
+              details.push({ skuCode: sku, skuName: name, expectedQuantity: parseInt(qty), unit: unit || '个' });
+          }
+      });
+
+      if (details.length === 0) {
+          showMessage('请添加商品明细', 'error');
+          return;
+      }
+
+      const totalQuantity = details.reduce((sum, d) => sum + d.expectedQuantity, 0);
+
+      const data = {
+          asn: {
+              asnNo: asnNo,
+              supplierName: document.getElementById('supplierName').value,
+              expectedDate: document.getElementById('expectedDate').value + ':00',
+              totalQuantity: totalQuantity,
+              remark: document.getElementById('asnRemark').value
+          },
+          details: details
+      };
+
+      try {
+          const response = await request('/api/inbound/asn', {
+              method: 'POST',
+              body: JSON.stringify(data)
+          });
+          const result = await response.json();
+          if (result.success) {
+              showMessage('ASN创建成功');
+              closeModal('asnModal');
+              loadAsnList();
+              resetAsnForm();
+          } else {
+              showMessage('创建失败', 'error');
+          }
+      } catch (err) {
+          showMessage('创建失败: ' + err.message, 'error');
+      }
+  }
+
+  function resetAsnForm() {
+      document.getElementById('asnNo').value = '';
+      document.getElementById('supplierName').value = '';
+      document.getElementById('expectedDate').value = '';
+      document.getElementById('asnRemark').value = '';
+      document.getElementById('asnDetails').innerHTML = `
+          <div class="form-row">
+              <input type="text" placeholder="SKU编码" class="detail-sku" style="flex:2">
+              <input type="text" placeholder="商品名称" class="detail-name" style="flex:3">
+              <input type="number" placeholder="数量" class="detail-qty" style="flex:1">
+              <input type="text" placeholder="单位" class="detail-unit" style="flex:1">
+              <button type="button" onclick="removeDetail(this)" style="background:#ff4d4f;color:white;border:none;padding:0 10px;border-radius:4px;">删除</button>
+          </div>
+      `;
+  }
+
+  async function loadAsnList() {
+      if (!checkAuth()) return;
+
+      const status = document.getElementById('statusFilter')?.value || '';
+      const response = await request(`/api/inbound/asn/list${status ? `?status=${status}` : ''}`);
+      const asns = await response.json();
+
+      const tbody = document.querySelector('#asnTable tbody');
+      if (asns.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="8" class="text-center">暂无数据</td></tr>';
+      } else {
+          tbody.innerHTML = asns.map(asn => `
+              <tr>
+                  <td>${asn.id}</td>
+                  <td>${asn.asnNo}</td>
+                  <td>${asn.supplierName || '-'}</td>
+                  <td>${asn.totalQuantity}</td>
+                  <td>${asn.receivedQuantity || 0}</td>
+                  <td><span class="status ${getStatusClass(asn.status)}">${getStatusText(asn.status, 'asn')}</span></td>
+                  <td>${formatDate(asn.createTime)}</td>
+                  <td>
+                      ${asn.status === 0 ? `<button class="btn btn-success" style="padding:4px 8px;font-size:12px" onclick="quickReceive(${asn.id})">收货</button>` : '-'}
+                  </td>
+              </tr>
+          `).join('');
+      }
+  }
+
+  async function quickReceive(asnId) {
+      document.getElementById('receiveAsnId').value = asnId;
+      showReceiveModal();
+  }
+
+  async function loadInventory() {
+      if (!checkAuth()) return;
+
+      const sku = document.getElementById('skuSearch')?.value || '';
+      const response = await request(`/api/inbound/inventory/list${sku ? `?skuCode=${sku}` : ''}`);
+      const inventory = await response.json();
+
+      const tbody = document.querySelector('#inventoryTable tbody');
+      if (inventory.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="7" class="text-center">暂无库存</td></tr>';
+      } else {
+          tbody.innerHTML = inventory.map(item => `
+              <tr>
+                  <td>${item.skuCode}</td>
+                  <td>${item.skuName || '-'}</td>
+                  <td>${item.batchNo || '-'}</td>
+                  <td>${item.quantity}</td>
+                  <td>${item.lockedQuantity || 0}</td>
+                  <td><strong>${item.quantity - (item.lockedQuantity || 0)}</strong></td>
+                  <td>${formatDate(item.expiryDate)}</td>
+              </tr>
+          `).join('');
+      }
+  }
+
+  async function showReceiveModal() {
+      // 加载待收货的ASN
+      const response = await request('/api/inbound/asn/list?status=0');
+      const asns = await response.json();
+      const select = document.getElementById('receiveAsnId');
+      select.innerHTML = '<option value="">请选择</option>' + asns.map(a => `<option value="${a.id}">${a.asnNo} - ${a.supplierName}</option>`).join('');
+
+      document.getElementById('receiveModal').classList.add('show');
+  }
+
+  async function receiveGoods() {
+      const asnId = document.getElementById('receiveAsnId').value;
+      if (!asnId) {
+          showMessage('请选择ASN单', 'error');
+          return;
+      }
+
+      // 获取ASN明细
+      const asnResponse = await request('/api/inbound/asn/list');
+      const asns = await asnResponse.json();
+      const asn = asns.find(a => a.id == asnId);
+
+      const items = [];
+      const batchNo = 'BATCH' + Date.now();
+
+      // 简单处理：假设ASN的所有商品都收货
+      const detailResponse = await fetch(`/api/inbound/asn/detail?asnId=${asnId}`, {
+          headers: { 'Authorization': `Bearer ${getToken()}`, 'X-Tenant-Code': getTenantCode() }
+      });
+      const details = await detailResponse.json();
+
+      for (const detail of details) {
+          items.push({
+              skuCode: detail.skuCode,
+              skuName: detail.skuName,
+              quantity: detail.expectedQuantity,
+              batchNo: batchNo,
+              productionDate: new Date().toISOString().split('T')[0] + 'T00:00:00',
+              expiryDate: '2027-01-01T00:00:00'
+          });
+      }
+
+      const response = await request('/api/inbound/receive', {
+          method: 'POST',
+          body: JSON.stringify({ asnId: parseInt(asnId), items: items })
+      });
+      const result = await response.json();
+      if (result.success) {
+          showMessage('收货成功');
+          closeModal('receiveModal');
+          loadAsnList();
+      } else {
+          showMessage('收货失败', 'error');
+      }
+  }
+
+  async function showQualityModal() {
+      // 加载待质检的收货单
+      const response = await request('/api/inbound/receiving/list?status=0');
+      const receivings = await response.json();
+      const select = document.getElementById('qualityReceivingId');
+      select.innerHTML = '<option value="">请选择</option>' + receivings.map(r => `<option value="${r.id}">${r.receivingNo}</option>`).join('');
+
+      document.getElementById('qualityModal').classList.add('show');
+  }
+
+  async function qualityCheck() {
+      const receivingId = document.getElementById('qualityReceivingId').value;
+      if (!receivingId) {
+          showMessage('请选择收货单', 'error');
+          return;
+      }
+
+      const detailResponse = await fetch(`/api/inbound/receiving/detail?receivingId=${receivingId}`, {
+          headers: { 'Authorization': `Bearer ${getToken()}`, 'X-Tenant-Code': getTenantCode() }
+      });
+      const details = await detailResponse.json();
+
+      const results = details.map(d => ({
+          detailId: d.id,
+          qualifiedQuantity: d.quantity,
+          defectiveQuantity: 0,
+          preferredZone: 'A'
+      }));
+
+      const response = await request('/api/inbound/quality-check', {
+          method: 'POST',
+          body: JSON.stringify({ receivingId: parseInt(receivingId), results: results })
+      });
+      const result = await response.json();
+      if (result.success) {
+          showMessage('质检上架完成');
+          closeModal('qualityModal');
+          loadAsnList();
+          loadInventory();
+      } else {
+          showMessage('质检失败', 'error');
+      }
+  }
+
+  function showCreateAsnModal() {
+      resetAsnForm();
+      document.getElementById('asnModal').classList.add('show');
+  }
+
+  function closeModal(modalId) {
+      document.getElementById(modalId).classList.remove('show');
+  }
+
+  // 初始化
+  checkAuth();
+  loadAsnList();
+  loadInventory();
+
+  document.getElementById('tenantCode').textContent = getTenantCode();
+  const token = getToken();
+  if (token) {
+      try {
+          const payload = JSON.parse(atob(token.split('.')[1]));
+          document.getElementById('username').textContent = payload.username || 'admin';
+      } catch(e) {}
+  }
+</script>
+</body>
+</html>

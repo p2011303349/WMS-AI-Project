@@ -1,0 +1,611 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>库存管理 - WMS</title>
+  <link rel="stylesheet" href="/css/wms.css">
+  <style>
+    .tab-container {
+        display: flex;
+        border-bottom: 1px solid #e8e8e8;
+        margin-bottom: 20px;
+    }
+    .tab {
+        padding: 10px 20px;
+        cursor: pointer;
+        border: none;
+        background: none;
+        font-size: 14px;
+        transition: all 0.3s;
+    }
+    .tab.active {
+        color: #1890ff;
+        border-bottom: 2px solid #1890ff;
+    }
+    .tab-content {
+        display: none;
+    }
+    .tab-content.active {
+        display: block;
+    }
+    .form-inline {
+        display: flex;
+        gap: 12px;
+        align-items: flex-end;
+        flex-wrap: wrap;
+    }
+    .form-inline .form-group {
+        margin-bottom: 0;
+    }
+    .form-inline .form-group label {
+        font-size: 12px;
+        margin-bottom: 4px;
+    }
+    .form-inline input, .form-inline select {
+        width: 180px;
+    }
+    .log-table {
+        margin-top: 20px;
+    }
+    .badge-freeze {
+        background: #1890ff;
+        color: white;
+    }
+    .badge-unfreeze {
+        background: #52c41a;
+        color: white;
+    }
+    .badge-deduct {
+        background: #faad14;
+        color: white;
+    }
+    .info-text {
+        color: #666;
+        font-size: 12px;
+        margin-top: 5px;
+    }
+  </style>
+</head>
+<body>
+<div class="header">
+  <h2>🏭 WMS 仓储管理系统</h2>
+  <div class="header-info">
+    <span>租户: <span id="tenantCode">-</span></span>
+    <span>用户: <span id="username">-</span></span>
+    <button class="logout-btn" onclick="logout()">退出登录</button>
+  </div>
+</div>
+
+<div class="app-container">
+  <div class="sidebar">
+    <a href="/index.html" class="active">📊 仪表盘</a>
+    <a href="/inbound.html">📥 入库管理</a>
+    <a href="/outbound.html">📤 出库管理</a>
+    <a href="/inventory.html">📦 库存查询</a>
+    <a href="/iot-dashboard.html">📈 IoT仪表盘</a>
+    <a href="/ai-chat.html">🤖 AI聊天</a>
+    <a href="/ai-agent.html">🔧 AI智能体</a>
+    <a href="/replenishment.html" class="active">📝 智能补货</a>
+    <a href="/exception.html">⚠️ 异常管理</a>
+    <a href="/workflow.html" class="active">🔄 工作流</a>
+  </div>
+
+  <div class="main-content">
+    <!-- Tab 切换 -->
+    <div class="tab-container">
+      <button class="tab active" onclick="switchTab('freeze')">🔒 库存冻结/解冻</button>
+      <button class="tab" onclick="switchTab('move')">🔄 库存移动</button>
+      <button class="tab" onclick="switchTab('log')">📋 冻结记录</button>
+    </div>
+
+    <!-- 库存冻结/解冻 Tab -->
+    <div id="freezeTab" class="tab-content active">
+      <div class="card">
+        <div class="card-header">
+          <h3>📦 库存列表</h3>
+          <button class="btn btn-default" onclick="loadInventoryList()">刷新</button>
+        </div>
+        <div class="card-body">
+          <!-- 搜索条件 -->
+          <div class="form-inline" style="margin-bottom: 16px;">
+            <div class="form-group">
+              <label>SKU编码</label>
+              <input type="text" id="freezeSkuCode" placeholder="SKU编码" onkeyup="loadInventoryList()">
+            </div>
+            <div class="form-group">
+              <label>商品名称</label>
+              <input type="text" id="freezeSkuName" placeholder="商品名称" onkeyup="loadInventoryList()">
+            </div>
+            <div class="form-group">
+              <label>货位编码</label>
+              <input type="text" id="freezeLocationCode" placeholder="货位编码" onkeyup="loadInventoryList()">
+            </div>
+            <div class="form-group">
+              <label>&nbsp;</label>
+              <button class="btn btn-primary" onclick="loadInventoryList()">查询</button>
+            </div>
+          </div>
+
+          <table class="data-table" id="inventoryTable">
+            <thead>
+            <tr>
+              <th>ID</th>
+              <th>SKU编码</th>
+              <th>商品名称</th>
+              <th>货位</th>
+              <th>批次号</th>
+              <th>库存数量</th>
+              <th>锁定数量</th>
+              <th>可用数量</th>
+              <th>有效期</th>
+              <th>操作</th>
+            </tr>
+            </thead>
+            <tbody>
+            <tr><td colspan="10" class="text-center">加载中...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- 库存移动 Tab -->
+    <div id="moveTab" class="tab-content">
+      <div class="card">
+        <div class="card-header">
+          <h3>🔄 库存移动（货位调拨）</h3>
+        </div>
+        <div class="card-body">
+          <div class="form-inline" style="margin-bottom: 20px;">
+            <div class="form-group">
+              <label>选择库存</label>
+              <select id="moveInventoryId" style="width: 250px;">
+                <option value="">请选择库存</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>移动数量</label>
+              <input type="number" id="moveQuantity" placeholder="移动数量">
+            </div>
+            <div class="form-group">
+              <label>目标货位</label>
+              <select id="targetLocationId" style="width: 200px;">
+                <option value="">请选择目标货位</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>移动原因</label>
+              <input type="text" id="moveReason" placeholder="货位调整/整理库存">
+            </div>
+            <div class="form-group">
+              <label>&nbsp;</label>
+              <button class="btn btn-primary" onclick="moveInventory()">确认移动</button>
+            </div>
+          </div>
+          <div class="info-text">💡 提示：库存移动会将指定数量的商品从一个货位转移到另一个货位</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 冻结记录 Tab -->
+    <div id="logTab" class="tab-content">
+      <div class="card">
+        <div class="card-header">
+          <h3>📋 冻结/解冻记录</h3>
+          <div class="form-inline">
+            <input type="text" id="logOrderNo" placeholder="订单号" style="width: 200px;">
+            <button class="btn btn-primary" onclick="loadFreezeLogs()">查询</button>
+            <button class="btn btn-default" onclick="resetLogSearch()">重置</button>
+          </div>
+        </div>
+        <div class="card-body">
+          <table class="data-table" id="logTable">
+            <thead>
+            <tr>
+              <th>ID</th>
+              <th>SKU编码</th>
+              <th>冻结数量</th>
+              <th>订单号</th>
+              <th>冻结原因</th>
+              <th>状态</th>
+              <th>创建时间</th>
+              <th>操作</th>
+            </tr>
+            </thead>
+            <tbody>
+            <tr><td colspan="8" class="text-center">加载中...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 冻结弹窗 -->
+<div id="freezeModal" class="modal">
+  <div class="modal-content" style="width: 400px;">
+    <div class="modal-header">
+      <h4>🔒 冻结库存</h4>
+      <span class="modal-close" onclick="closeModal('freezeModal')">&times;</span>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label>库存ID</label>
+        <input type="text" id="freezeInventoryId" readonly>
+      </div>
+      <div class="form-group">
+        <label>SKU编码</label>
+        <input type="text" id="freezeSku" readonly>
+      </div>
+      <div class="form-group">
+        <label>可用库存</label>
+        <input type="text" id="freezeAvailable" readonly>
+      </div>
+      <div class="form-group">
+        <label>冻结数量</label>
+        <input type="number" id="freezeQuantity" placeholder="请输入冻结数量">
+      </div>
+      <div class="form-group">
+        <label>订单号</label>
+        <input type="text" id="freezeOrderNo" placeholder="关联订单号">
+      </div>
+      <div class="form-group">
+        <label>冻结原因</label>
+        <input type="text" id="freezeReason" placeholder="出库锁定/预留">
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-default" onclick="closeModal('freezeModal')">取消</button>
+      <button class="btn btn-primary" onclick="submitFreeze()">确认冻结</button>
+    </div>
+  </div>
+</div>
+
+<!-- 解冻弹窗 -->
+<div id="unfreezeModal" class="modal">
+  <div class="modal-content" style="width: 400px;">
+    <div class="modal-header">
+      <h4>🔓 解冻库存</h4>
+      <span class="modal-close" onclick="closeModal('unfreezeModal')">&times;</span>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label>冻结记录ID</label>
+        <input type="text" id="unfreezeLogId" readonly>
+      </div>
+      <div class="form-group">
+        <label>SKU编码</label>
+        <input type="text" id="unfreezeSku" readonly>
+      </div>
+      <div class="form-group">
+        <label>冻结数量</label>
+        <input type="text" id="unfreezeQuantity" readonly>
+      </div>
+      <div class="form-group">
+        <label>订单号</label>
+        <input type="text" id="unfreezeOrderNo" readonly>
+      </div>
+      <div class="info-text" style="color:#faad14;">⚠️ 确认解冻后，库存将释放，可重新分配给其他订单</div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-default" onclick="closeModal('unfreezeModal')">取消</button>
+      <button class="btn btn-warning" onclick="submitUnfreeze()">确认解冻</button>
+    </div>
+  </div>
+</div>
+
+<script src="/js/common.js"></script>
+<script>
+  let currentInventory = [];
+
+  // Tab 切换
+  function switchTab(tab) {
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+
+      if (tab === 'freeze') {
+          document.querySelector('.tab').classList.add('active');
+          document.getElementById('freezeTab').classList.add('active');
+          loadInventoryList();
+      } else if (tab === 'move') {
+          document.querySelectorAll('.tab')[1].classList.add('active');
+          document.getElementById('moveTab').classList.add('active');
+          loadInventoryForMove();
+          loadLocations();
+      } else if (tab === 'log') {
+          document.querySelectorAll('.tab')[2].classList.add('active');
+          document.getElementById('logTab').classList.add('active');
+          loadFreezeLogs();
+      }
+  }
+
+  // 加载库存列表
+  async function loadInventoryList() {
+      if (!checkAuth()) return;
+
+      const response = await request('/api/inbound/inventory/list');
+      let inventory = await response.json();
+
+      // 获取货位信息
+      const locResponse = await request('/api/inbound/location/list');
+      const locations = await locResponse.json();
+      const locationMap = new Map();
+      locations.forEach(loc => {
+          locationMap.set(loc.id, loc.locationCode);
+      });
+
+      // 添加货位编码和可用数量
+      inventory = inventory.map(item => ({
+          ...item,
+          locationCode: locationMap.get(item.locationId) || '-',
+          availableQuantity: item.quantity - (item.lockedQuantity || 0)
+      }));
+
+      // 过滤
+      const skuCode = document.getElementById('freezeSkuCode').value;
+      const skuName = document.getElementById('freezeSkuName').value;
+      const locationCode = document.getElementById('freezeLocationCode').value;
+
+      if (skuCode) inventory = inventory.filter(i => i.skuCode.includes(skuCode));
+      if (skuName) inventory = inventory.filter(i => i.skuName && i.skuName.includes(skuName));
+      if (locationCode) inventory = inventory.filter(i => i.locationCode.includes(locationCode));
+
+      currentInventory = inventory;
+
+      const tbody = document.querySelector('#inventoryTable tbody');
+      if (inventory.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="10" class="text-center">暂无数据</td></tr>';
+          return;
+      }
+
+      tbody.innerHTML = inventory.map(item => `
+          <tr>
+              <td>${item.id}</td>
+              <td>${item.skuCode}</td>
+              <td>${item.skuName || '-'}</td>
+              <td>${item.locationCode}</td>
+              <td>${item.batchNo || '-'}</td>
+              <td>${item.quantity}</td>
+              <td>${item.lockedQuantity || 0}</td>
+              <td><strong>${item.availableQuantity}</strong></td>
+              <td>${formatDate(item.expiryDate)}</td>
+              <td>
+                  <button class="btn btn-primary" style="padding:4px 8px;font-size:12px" onclick="showFreezeModal(${item.id}, '${item.skuCode}', ${item.availableQuantity})">冻结</button>
+               </td>
+          </tr>
+      `).join('');
+  }
+
+  // 显示冻结弹窗
+  function showFreezeModal(inventoryId, skuCode, availableQuantity) {
+      document.getElementById('freezeInventoryId').value = inventoryId;
+      document.getElementById('freezeSku').value = skuCode;
+      document.getElementById('freezeAvailable').value = availableQuantity;
+      document.getElementById('freezeQuantity').value = '';
+      document.getElementById('freezeOrderNo').value = '';
+      document.getElementById('freezeReason').value = '出库锁定';
+      document.getElementById('freezeModal').classList.add('show');
+  }
+
+  // 提交冻结
+  async function submitFreeze() {
+      const inventoryId = parseInt(document.getElementById('freezeInventoryId').value);
+      const quantity = parseInt(document.getElementById('freezeQuantity').value);
+      const orderNo = document.getElementById('freezeOrderNo').value;
+      const reason = document.getElementById('freezeReason').value;
+      const available = parseInt(document.getElementById('freezeAvailable').value);
+
+      if (!quantity || quantity <= 0) {
+          showMessage('请输入有效的冻结数量', 'error');
+          return;
+      }
+      if (quantity > available) {
+          showMessage(`冻结数量不能超过可用库存 ${available}`, 'error');
+          return;
+      }
+      if (!orderNo) {
+          showMessage('请输入订单号', 'error');
+          return;
+      }
+
+      try {
+          const response = await request('/api/inventory/manage/freeze', {
+              method: 'POST',
+              body: JSON.stringify({
+                  inventoryId: inventoryId,
+                  quantity: quantity,
+                  orderNo: orderNo,
+                  reason: reason
+              })
+          });
+          const result = await response.json();
+          if (result.success) {
+              showMessage('冻结成功');
+              closeModal('freezeModal');
+              loadInventoryList();
+              loadFreezeLogs();
+          } else {
+              showMessage(result.message || '冻结失败', 'error');
+          }
+      } catch (err) {
+          showMessage('冻结失败: ' + err.message, 'error');
+      }
+  }
+
+  // 加载冻结记录
+  async function loadFreezeLogs() {
+      if (!checkAuth()) return;
+
+      const orderNo = document.getElementById('logOrderNo').value;
+      let url = '/api/inventory/manage/freeze-logs';
+      if (orderNo) url += `?orderNo=${orderNo}`;
+
+      const response = await request(url);
+      const logs = await response.json();
+
+      const statusMap = {0: '冻结中', 1: '已解冻', 2: '已扣减'};
+      const statusClass = {0: 'badge-freeze', 1: 'badge-unfreeze', 2: 'badge-deduct'};
+
+      const tbody = document.querySelector('#logTable tbody');
+      if (logs.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="8" class="text-center">暂无数据</td></tr>';
+          return;
+      }
+
+      tbody.innerHTML = logs.map(log => `
+          <tr>
+              <td>${log.id}</td>
+              <td>${log.skuCode}</td>
+              <td>${log.quantity}</td>
+              <td>${log.orderNo || '-'}</td>
+              <td>${log.reason || '-'}</td>
+              <td><span class="badge ${statusClass[log.status]}">${statusMap[log.status]}</span></td>
+              <td>${formatDate(log.createTime)}</td>
+              <td>
+                  ${log.status === 0 ? `<button class="btn btn-warning" style="padding:4px 8px;font-size:12px" onclick="showUnfreezeModal(${log.id}, '${log.skuCode}', ${log.quantity}, '${log.orderNo}')">解冻</button>` : '-'}
+               </td>
+          </tr>
+      `).join('');
+  }
+
+  // 显示解冻弹窗
+  function showUnfreezeModal(logId, skuCode, quantity, orderNo) {
+      document.getElementById('unfreezeLogId').value = logId;
+      document.getElementById('unfreezeSku').value = skuCode;
+      document.getElementById('unfreezeQuantity').value = quantity;
+      document.getElementById('unfreezeOrderNo').value = orderNo;
+      document.getElementById('unfreezeModal').classList.add('show');
+  }
+
+  // 提交解冻
+  async function submitUnfreeze() {
+      const freezeLogId = parseInt(document.getElementById('unfreezeLogId').value);
+
+      try {
+          const response = await request(`/api/inventory/manage/unfreeze?freezeLogId=${freezeLogId}`, {
+              method: 'POST'
+          });
+          const result = await response.json();
+          if (result.success) {
+              showMessage('解冻成功');
+              closeModal('unfreezeModal');
+              loadInventoryList();
+              loadFreezeLogs();
+          } else {
+              showMessage(result.message || '解冻失败', 'error');
+          }
+      } catch (err) {
+          showMessage('解冻失败: ' + err.message, 'error');
+      }
+  }
+
+  // 加载货位列表（用于库存移动）
+  async function loadLocations() {
+      const response = await request('/api/inbound/location/list');
+      const locations = await response.json();
+      const select = document.getElementById('targetLocationId');
+      select.innerHTML = '<option value="">请选择目标货位</option>' +
+          locations.map(loc => `<option value="${loc.id}">${loc.locationCode} (${loc.zone}区)</option>`).join('');
+  }
+
+  // 加载库存列表（用于库存移动下拉框）
+  async function loadInventoryForMove() {
+      const response = await request('/api/inbound/inventory/list');
+      let inventory = await response.json();
+
+      const locResponse = await request('/api/inbound/location/list');
+      const locations = await locResponse.json();
+      const locationMap = new Map();
+      locations.forEach(loc => {
+          locationMap.set(loc.id, loc.locationCode);
+      });
+
+      inventory = inventory.filter(i => i.quantity - (i.lockedQuantity || 0) > 0);
+
+      const select = document.getElementById('moveInventoryId');
+      select.innerHTML = '<option value="">请选择库存</option>' +
+          inventory.map(inv => {
+              const available = inv.quantity - (inv.lockedQuantity || 0);
+              return `<option value="${inv.id}" data-location="${locationMap.get(inv.locationId)}" data-available="${available}">
+                  ${inv.skuCode} - ${inv.skuName} (${locationMap.get(inv.locationId)}) - 可用:${available}
+              </option>`;
+          }).join('');
+  }
+
+  // 库存移动
+  async function moveInventory() {
+      const inventoryId = document.getElementById('moveInventoryId').value;
+      const quantity = parseInt(document.getElementById('moveQuantity').value);
+      const targetLocationId = document.getElementById('targetLocationId').value;
+      const reason = document.getElementById('moveReason').value;
+
+      if (!inventoryId) {
+          showMessage('请选择库存', 'error');
+          return;
+      }
+      if (!quantity || quantity <= 0) {
+          showMessage('请输入有效的移动数量', 'error');
+          return;
+      }
+      if (!targetLocationId) {
+          showMessage('请选择目标货位', 'error');
+          return;
+      }
+
+      const selectedOption = document.getElementById('moveInventoryId').options[document.getElementById('moveInventoryId').selectedIndex];
+      const available = parseInt(selectedOption.dataset.available);
+      if (quantity > available) {
+          showMessage(`移动数量不能超过可用库存 ${available}`, 'error');
+          return;
+      }
+
+      try {
+          const response = await request('/api/inventory/manage/move', {
+              method: 'POST',
+              body: JSON.stringify({
+                  inventoryId: parseInt(inventoryId),
+                  toLocationId: parseInt(targetLocationId),
+                  quantity: quantity,
+                  reason: reason || '货位调整'
+              })
+          });
+          const result = await response.json();
+          if (result.success) {
+              showMessage('库存移动成功');
+              document.getElementById('moveQuantity').value = '';
+              document.getElementById('moveReason').value = '';
+              loadInventoryList();
+              loadInventoryForMove();
+          } else {
+              showMessage(result.message || '移动失败', 'error');
+          }
+      } catch (err) {
+          showMessage('移动失败: ' + err.message, 'error');
+      }
+  }
+
+  function resetLogSearch() {
+      document.getElementById('logOrderNo').value = '';
+      loadFreezeLogs();
+  }
+
+  function closeModal(modalId) {
+      document.getElementById(modalId).classList.remove('show');
+  }
+
+  // 初始化
+  checkAuth();
+  loadInventoryList();
+
+  document.getElementById('tenantCode').textContent = getTenantCode();
+  const token = getToken();
+  if (token) {
+      try {
+          const payload = JSON.parse(atob(token.split('.')[1]));
+          document.getElementById('username').textContent = payload.username || 'admin';
+      } catch(e) {}
+  }
+</script>
+</body>
+</html>
